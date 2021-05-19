@@ -17,12 +17,17 @@ import android.widget.ImageButton;
 import android.widget.ImageView;
 import android.widget.TextView;
 
+import java.io.BufferedReader;
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.IOException;
+import java.io.InputStreamReader;
 import java.nio.ByteBuffer;
 import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
 
 public class MainActivity extends AppCompatActivity {
 
@@ -33,9 +38,10 @@ public class MainActivity extends AppCompatActivity {
 
     private static final int SELECT_IMAGE = 1;
 
+    private List<String> words;
     private Button button1;
-    private Button button2;
     private ImageView imageView;
+    private TextView textView;
     private Bitmap yourSelectedImage = null;
     private Net net = null;
     private Utils utils = null;
@@ -45,9 +51,28 @@ public class MainActivity extends AppCompatActivity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
+        words = new ArrayList<String>();
+        //读取label来初始化
+        try {
+            BufferedReader reader = new BufferedReader(new InputStreamReader(
+                    getAssets().open("labels.txt")
+            ));
+            while (true) {
+                String line = reader.readLine();
+                if (line == null) break;
+                words.add(line);
+            }
+
+        } catch (IOException e) {
+            System.out.println("error here");
+            e.printStackTrace();
+        }
+
+
+
         button1 = (Button)findViewById(R.id.button);
-        button2 = (Button)findViewById(R.id.button2);
         imageView = (ImageView)findViewById(R.id.imageView);
+        textView = findViewById(R.id.sample_text);
 
         button1.setOnClickListener(new View.OnClickListener() {
             @Override
@@ -62,7 +87,6 @@ public class MainActivity extends AppCompatActivity {
         utils = new Utils();
 
         // Example of a call to a native method
-        TextView tv = findViewById(R.id.sample_text);
         //tv.setText(testForJNI());
         //Student stu  = new Student();
         //stu.setValue("yoyochecknow");
@@ -70,12 +94,12 @@ public class MainActivity extends AppCompatActivity {
         net = new Net();
 //        net.initialize();
 //        net.predict();
-        tv.setText(net.testForJNI());
+        textView.setText("选择图片来进行识别吧!");
 
         //load model sort of things(solution from https://stackoverflow.com/questions/65273837/android-native-file-read-from-assets-folder-by-tflite-buildfromfile)
         AssetFileDescriptor fileDescriptor = null;
         try {
-            fileDescriptor = getResources().getAssets().openFd("quicknet.tflite");
+            fileDescriptor = getResources().getAssets().openFd("bireal_best.tflite");
         } catch (IOException e) {
             e.printStackTrace();
         }
@@ -136,11 +160,12 @@ public class MainActivity extends AppCompatActivity {
                     Bitmap rgba = bitmap.copy(Bitmap.Config.ARGB_8888, true);
 
                     // resize to 227x227
-                    yourSelectedImage = Bitmap.createScaledBitmap(rgba, 224, 224, false);
+                    yourSelectedImage = Bitmap.createScaledBitmap(rgba, 32, 32, false);
 
                     rgba.recycle();
 
                     imageView.setImageBitmap(bitmap);
+
                 }
             }
             catch (FileNotFoundException e)
@@ -161,14 +186,22 @@ public class MainActivity extends AppCompatActivity {
                 floatData[j] = intData[j];
             }
 
-            System.out.println(floatData.length);
+            //the length of flaot data is 3072
+            //z-score
+            float mean = (float) 121.93584;
+            float std = (float) 68.38902;
+
+            for(int i=0;i<3072;i++){
+                floatData[i] = (float) ((floatData[i] - mean)/ (std +1e-7));
+            }
+
 
 
             //这里应该还是有离谱，不然每次都要重新读模型？那也太扯了
             //load model sort of things(solution from https://stackoverflow.com/questions/65273837/android-native-file-read-from-assets-folder-by-tflite-buildfromfile)
             AssetFileDescriptor fileDescriptor = null;
             try {
-                fileDescriptor = getResources().getAssets().openFd("quicknet.tflite");
+                fileDescriptor = getResources().getAssets().openFd("bireal_best.tflite");
             } catch (IOException e) {
                 e.printStackTrace();
             }
@@ -187,12 +220,18 @@ public class MainActivity extends AppCompatActivity {
             //load model
             net.loadModel(modelBuffer);
 
+            long startTime = System.currentTimeMillis();    //获取开始时间
             float[] output = net.predict(floatData);
+            long endTime = System.currentTimeMillis();
             System.out.println("print top 5");
-            int[] indexs = utils.getTopNFromArray(output,1000,5);
+            int[] indexs = utils.getTopNFromArray(output,100,5);
             for(int i=0;i<5;i++){
                 System.out.println(indexs[i]);
             }
+            String ans = "";
+            ans += "类别：" + words.get(indexs[0]) + "\n";
+            ans += "推理时间：" + (endTime-startTime) +"  ms  \n";
+            textView.setText(ans);
 
         }
 
